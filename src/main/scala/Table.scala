@@ -5,24 +5,30 @@ import TestTables.tableFunctional
 import TestTables.tableObjectOriented
 
 trait FilterCond {
-  def &&(other: FilterCond): FilterCond = ???
-  def ||(other: FilterCond): FilterCond = ???
+  def &&(other: FilterCond): FilterCond = And(this, other)
+  def ||(other: FilterCond): FilterCond = Or(this, other)
   // fails if the column name is not present in the row
   def eval(r: Row): Option[Boolean]
 }
 case class Field(colName: String, predicate: String => Boolean) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = ???
+  override def eval(r: Row): Option[Boolean] = {
+    r.get(colName).map(predicate)
+  }
 }
 
 case class And(f1: FilterCond, f2: FilterCond) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = ???
+  override def eval(r: Row): Option[Boolean] = {
+    f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 && b2))
+  }
 }
 
 case class Or(f1: FilterCond, f2: FilterCond) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = ???
+  override def eval(r: Row): Option[Boolean] = {
+    f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 || b2))
+  }
 }
 
 trait Query {
@@ -74,13 +80,62 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
   def getTabular : List[List[String]] = tabular
 
   // 1.1
-  override def toString: String = ???
+  override def toString: String = {
+    val sb = new StringBuilder()
+    sb.append(columnNames.mkString(","))
+    tabular.foreach(row => {
+      sb.append("\n")
+      sb.append(row.mkString(","))
+    })
+    sb.toString()
+  }
 
   // 2.1
-  def select(columns: Line): Option[Table] = ???
+  def select(columns: Line): Option[Table] = {
+    val newTabular = tabular.map(row => {
+      columns.flatMap(col => {
+        val index = columnNames.indexOf(col)
+        if (index == -1) {
+          None
+        } else {
+          Some(row(index))
+        }
+      })
+    })
+    val newColumnNames = columns.filter(col => columnNames.contains(col))
+    if (newColumnNames.length == columns.length) {
+      Some(new Table(newColumnNames, newTabular))
+    } else {
+      None
+    }
+  }
 
   // 2.2
-  def filter(cond: FilterCond): Option[Table] = ???
+  def filter(cond: FilterCond): Option[Table] = {
+    cond match {
+      case Field(colName, predicate) => {
+        val index = columnNames.indexOf(colName)
+        if (index == -1) {
+          None
+        } else {
+          val newTabular = tabular.filter(row => predicate(row(index)))
+          Some(new Table(columnNames, newTabular))
+        }
+      }
+      case And(f1, f2) => {
+        for {
+          t1 <- filter(f1)
+          t2 <- filter(f2)
+        } yield new Table(t1.getColumnNames, t1.getTabular.intersect(t2.getTabular))
+      }
+      case Or(f1, f2) => {
+        for {
+          t1 <- filter(f1)
+          t2 <- filter(f2)
+        } yield new Table(t1.getColumnNames, t1.getTabular.concat(t2.getTabular))
+      }
+    }
+  }
 
   // 2.3.
   def newCol(name: String, defaultVal: String): Table = ???
@@ -91,5 +146,10 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
 
 object Table {
   // 1.2
-  def apply(s: String): Table = ???
+  def apply(s: String): Table = {
+    val lines = s.split("\n").toList
+    val columnNames = lines.head.split(",").toList
+    val tabular = lines.tail.map(_.split(",").toList)
+    new Table(columnNames, tabular)
+  }
 }

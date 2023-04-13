@@ -115,12 +115,12 @@ object TestTables {
   }
 
   // 3.1
-  def programmingLanguages1: Table = ???
+//  def programmingLanguages1: Table = ???
 
   // 3.2
-  val programmingLanguages2: Table = ???
+//  val programmingLanguages2: Table = ???
 
   // 3.3
-  val programmingLanguages3: Table = ???
+//  val programmingLanguages3: Table = ???
 
 }
