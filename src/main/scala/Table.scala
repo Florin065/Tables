@@ -12,23 +12,17 @@ trait FilterCond {
 }
 case class Field(colName: String, predicate: String => Boolean) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = {
-    r.get(colName).map(predicate)
-  }
+  override def eval(r: Row): Option[Boolean] = r.get(colName).map(predicate)
 }
 
 case class And(f1: FilterCond, f2: FilterCond) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = {
-    f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 && b2))
-  }
+  override def eval(r: Row): Option[Boolean] = f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 && b2))
 }
 
 case class Or(f1: FilterCond, f2: FilterCond) extends FilterCond {
   // 2.2.
-  override def eval(r: Row): Option[Boolean] = {
-    f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 || b2))
-  }
+  override def eval(r: Row): Option[Boolean] = f1.eval(r).flatMap(b1 => f2.eval(r).map(b2 => b1 || b2))
 }
 
 trait Query {
@@ -81,67 +75,62 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
 
   // 1.1
   override def toString: String = {
-    val sb = new StringBuilder()
-    sb.append(columnNames.mkString(","))
-    tabular.foreach(row => {
-      sb.append("\n")
-      sb.append(row.mkString(","))
-    })
-    sb.toString()
+    val table = columnNames :: tabular
+    table.map(_.mkString(",")).mkString("\n")
   }
 
   // 2.1
   def select(columns: Line): Option[Table] = {
+    val newColumnNames = columnNames.filter(elem => columns.contains(elem))
+
     val newTabular = tabular.map(row => {
       columns.flatMap(col => {
         val index = columnNames.indexOf(col)
-        if (index == -1) {
-          None
-        } else {
-          Some(row(index))
-        }
+        if (index == -1) None
+        else Some(row(index))
       })
     })
-    val newColumnNames = columns.filter(col => columnNames.contains(col))
-    if (newColumnNames.length == columns.length) {
-      Some(new Table(newColumnNames, newTabular))
-    } else {
-      None
-    }
+
+    if (newColumnNames.length == columns.length) Some(new Table(newColumnNames, newTabular))
+    else None
   }
 
   // 2.2
-  def filter(cond: FilterCond): Option[Table] = {
-    cond match {
-      case Field(colName, predicate) => {
-        val index = columnNames.indexOf(colName)
-        if (index == -1) {
-          None
-        } else {
-          val newTabular = tabular.filter(row => predicate(row(index)))
-          Some(new Table(columnNames, newTabular))
-        }
+  def filter(cond: FilterCond): Option[Table] = cond match {
+    case Field(colName, predicate) =>
+      columnNames.indexOf(colName) match {
+        case -1 => None
+        case index => Some(new Table(columnNames, tabular.filter(row => predicate(row(index)))))
       }
-      case And(f1, f2) => {
-        for {
-          t1 <- filter(f1)
-          t2 <- filter(f2)
-        } yield new Table(t1.getColumnNames, t1.getTabular.intersect(t2.getTabular))
-      }
-      case Or(f1, f2) => {
-        for {
-          t1 <- filter(f1)
-          t2 <- filter(f2)
-        } yield new Table(t1.getColumnNames, t1.getTabular.concat(t2.getTabular))
-      }
-    }
+    case And(f1, f2) =>
+      filter(f1).flatMap(t1 => filter(f2).map(t2 => new Table(t1.getColumnNames, t1.getTabular.intersect(t2.getTabular))))
+    case Or(f1, f2) =>
+      filter(f1).flatMap(t1 => filter(f2).map(t2 => new Table(t1.getColumnNames, (t2.getTabular ++ t1.getTabular).distinct)))
   }
 
   // 2.3.
-  def newCol(name: String, defaultVal: String): Table = ???
+  def newCol(name: String, defaultVal: String): Table = {
+    val newColumnNames = columnNames :+ name
+    val newTabular = tabular.map(_ :+ defaultVal)
+    new Table(newColumnNames, newTabular)
+  }
 
   // 2.4.
-  def merge(key: String, other: Table): Option[Table] = ???
+  def merge(key: String, other: Table): Option[Table] = {
+val index1 = columnNames.indexOf(key)
+    val index2 = other.getColumnNames.indexOf(key)
+
+    if (index1 == -1 || index2 == -1) None
+    else {
+      val newColumnNames = columnNames ++ other.getColumnNames.filter(_ != key)
+      val newTabular = tabular.flatMap(row1 => {
+        other.getTabular.filter(row2 => row1(index1) == row2(index2)).map(row2 => {
+          row1 ++ row2.filter(_ != row2(index2))
+        })
+      })
+      Some(new Table(newColumnNames, newTabular))
+    }
+  }
 }
 
 object Table {
