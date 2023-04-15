@@ -118,7 +118,7 @@ class Tests extends munit.FunSuite {
   test("2.4 merge languages - 15p") {
     val result = TestTables.table3.merge("Language", TestTables.table4)
     assert(result.nonEmpty, "result is empty")
-    println(result.get)
+//    println(result.get)
     assertEquals(result.get.getColumnNames, TestTables.table3_4_merged.getColumnNames, "column names don't match")
     assertEquals(result.get.getTabular.sortBy(_.head), TestTables.table3_4_merged.getTabular.sortBy(_.head), "table contents don't match")
   }
