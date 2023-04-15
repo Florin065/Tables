@@ -34,14 +34,14 @@ trait Query {
   Always succeeds
  */
 case class Value(t: Table) extends Query {
-  override def eval: Option[Table] = ???
+  override def eval: Option[Table] = Some(t)
 }
 /*
   Selects certain columns from the result of a target query
   Fails with None if some rows are not present in the resulting table
  */
 case class Select(columns: Line, target: Query) extends Query {
-  override def eval: Option[Table] = ???
+  override def eval: Option[Table] = Some(target.eval.get.select(columns)).get
 }
 
 /*
@@ -49,7 +49,7 @@ case class Select(columns: Line, target: Query) extends Query {
   Success depends only on the success of the target
  */
 case class Filter(condition: FilterCond, target: Query) extends Query {
-  override def eval: Option[Table] = ???
+  override def eval: Option[Table] = Some(target.eval.get.filter(condition)).get
 }
 
 /*
@@ -57,7 +57,7 @@ case class Filter(condition: FilterCond, target: Query) extends Query {
   Success depends only on the success of the target
  */
 case class NewCol(name: String, defaultVal: String, target: Query) extends Query {
-  override def eval: Option[Table] = ???
+  override def eval: Option[Table] = Some(target.eval.get.newCol(name, defaultVal))
 }
 
 /*
@@ -65,7 +65,7 @@ case class NewCol(name: String, defaultVal: String, target: Query) extends Query
   Success depends on whether the key exists in both tables or not AND on the success of the target
  */
 case class Merge(key: String, t1: Query, t2: Query) extends Query {
-  override def eval: Option[Table] = ???
+  override def eval: Option[Table] = Some(t1.eval.get.merge(key, t2.eval.get)).get
 }
 
 
@@ -75,8 +75,7 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
 
   // 1.1
   override def toString: String = {
-    val table = columnNames :: tabular
-    table.map(_.mkString(",")).mkString("\n")
+    (columnNames :: tabular).map(_.mkString(",")).mkString("\n")
   }
 
   // 2.1
@@ -110,23 +109,25 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
 
   // 2.3.
   def newCol(name: String, defaultVal: String): Table = {
-    val newColumnNames = columnNames :+ name
-    val newTabular = tabular.map(_ :+ defaultVal)
-    new Table(newColumnNames, newTabular)
+    new Table(columnNames :+ name, tabular.map(_ :+ defaultVal))
   }
 
   // 2.4.
   def merge(key: String, other: Table): Option[Table] = {
-val index1 = columnNames.indexOf(key)
-    val index2 = other.getColumnNames.indexOf(key)
+    val keyIndex = columnNames.indexOf(key)
+    val otherKeyIndex = other.getColumnNames.indexOf(key)
 
-    if (index1 == -1 || index2 == -1) None
+    if (keyIndex == -1 || otherKeyIndex == -1) None
     else {
-      val newColumnNames = columnNames ++ other.getColumnNames.filter(_ != key)
-      val newTabular = tabular.flatMap(row1 => {
-        other.getTabular.filter(row2 => row1(index1) == row2(index2)).map(row2 => {
-          row1 ++ row2.filter(_ != row2(index2))
-        })
+      val newColumnNames = (columnNames ++ other.getColumnNames).distinct
+      val newTabular = tabular.map(row => {
+        val keyVal = row(keyIndex)
+        val otherRow = other.getTabular.find(_.head == keyVal)
+        val otherRowVals = otherRow match {
+          case Some(row) => row.tail
+          case None => List.fill(other.getColumnNames.length - 1)("")
+        }
+        row ++ otherRowVals
       })
       Some(new Table(newColumnNames, newTabular))
     }
@@ -138,7 +139,7 @@ object Table {
   def apply(s: String): Table = {
     val lines = s.split("\n").toList
     val columnNames = lines.head.split(",").toList
-    val tabular = lines.tail.map(_.split(",").toList)
+    val tabular = lines.tail.map(_.split(",", -1).toList)
     new Table(columnNames, tabular)
   }
 }
