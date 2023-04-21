@@ -67,7 +67,7 @@ case class Merge(key: String, t1: Query, t2: Query) extends Query {
 
 class Table (columnNames: Line, tabular: List[List[String]]) {
   def getColumnNames :               Line = columnNames
-  def     getTabular : List[List[String]] = tabular
+  def     getTabular : List[List[String]] =     tabular
 
   // 1.1
   override def toString: String = (columnNames :: tabular).map(_.mkString(",")).mkString("\n")
@@ -107,96 +107,46 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
   // 2.4.
   def merge(key: String, other: Table): Option[Table] = {
     if (getColumnNames.contains(key) && other.getColumnNames.contains(key)) {
+      val thisTable = getTabular
+      val otherTable = other.getTabular
+      val thisColumns = getColumnNames
+      val otherColumns = other.getColumnNames
 
-      val (thistablerow, othertablerow, thistablecol, othertablecol) =
-        (this.getTabular, other.getTabular, this.getColumnNames, other.getColumnNames)
+      val diffColumns = otherColumns.filterNot(thisColumns.contains)
 
-      val diffcol = othertablecol.map(col =>
-        if (!thistablecol.contains(col)) Some(col) else None).filter(_.isDefined).map(_.get)
+      val mergedColumns = thisColumns ++ diffColumns
 
-      val columns_different = thistablecol ++ diffcol
-
-      val rowListTb1 = thistablerow.map(row => thistablecol.zip(row).toMap)
-      val rowListTb2 = othertablerow.map(row => othertablecol.zip(row).toMap)
-
-      val t1Keys = thistablerow.map(e => e(thistablecol.indexOf(key)))
-      val t2Keys = othertablerow.map(e => e(othertablecol.indexOf(key)))
-
-      val bothTables = t1Keys.intersect(t2Keys)
-
-      val onlyT1 = t1Keys.diff(t2Keys)
-      val onlyT2 = t2Keys.diff(t1Keys)
-
-      val bothTablesRowT1 = bothTables.flatMap(name => rowListTb1.map(row =>
-        if (row(key) == (name)) row else Nil)).filter(_ != Nil)
-      val bothTablesRowT2 = bothTables.flatMap(name => rowListTb2.map(row =>
-        if (row(key) == (name)) row else Nil)).filter(_ != Nil)
-
-      val onlyT1Row = onlyT1.flatMap(name => rowListTb1.collectFirst { case row if row(key).equals(name) => row }).distinct
-      val onlyT2Row = onlyT2.flatMap(name => rowListTb2.collectFirst { case row if row(key).equals(name) => row }).distinct
-
-
-      def mergeRows(row1: Map[String, String], row2: Map[String, String], cols: List[String]): List[String] = cols match {
-        case Nil => Nil
-        case col :: rest => {
-          val value1 = row1.getOrElse(col, "")
-          val value2 = row2.getOrElse(col, "")
-          if (value1 == value2) value1 :: mergeRows(row1, row2, rest)
-          else if (value1.isEmpty) value2 :: mergeRows(row1, row2, rest)
-          else if (value2.isEmpty) value1 :: mergeRows(row1, row2, rest)
-          else s"$value1;$value2" :: mergeRows(row1, row2, rest)
+      val mergedRows = for {
+        row1 <- thisTable
+        row2 <- otherTable
+        if row1(thisColumns.indexOf(key)) == row2(otherColumns.indexOf(key))
+        mergedRow = mergedColumns.map { col =>
+          val value1 = row1.lift(thisColumns.indexOf(col)).getOrElse("")
+          val value2 = row2.lift(otherColumns.indexOf(col)).getOrElse("")
+          if (value1 == value2 || value1.isEmpty) value2
+          else if (value2.isEmpty) value1
+          else s"$value1;$value2"
         }
+      } yield mergedRow
+
+      val onlyThisRows = thisTable.filterNot { row1 =>
+        otherTable.exists(row2 => row1(thisColumns.indexOf(key)) == row2(otherColumns.indexOf(key)))
+      }.map { row1 =>
+        mergedColumns.map(col => row1.lift(thisColumns.indexOf(col)).getOrElse(""))
       }
 
-      val merged_rows = for {
-        row <- bothTablesRowT1
-        idx = bothTablesRowT1.indexOf(row)
-        rowTb1 = row.toMap
-        rowTb2 = bothTablesRowT2(idx).toMap
-        if rowTb1.get(key) == rowTb2.get(key)
-      } yield mergeRows(rowTb1, rowTb2, columns_different)
-
-      def build_this_rows(rows: List[Map[String, String]], colNames: List[String]): List[List[String]] = {
-        rows match {
-          case Nil => Nil
-          case r :: rs =>
-            val row = r
-            val f = colNames.map(name => {
-              if (row.contains(name)) {
-                row.get(name).mkString
-              } else {
-                ""
-              }
-            })
-            f :: build_this_rows(rs, colNames)
-        }
+      val onlyOtherRows = otherTable.filterNot { row2 =>
+        thisTable.exists(row1 => row2(otherColumns.indexOf(key)) == row1(thisColumns.indexOf(key)))
+      }.map { row2 =>
+        mergedColumns.map(col => row2.lift(otherColumns.indexOf(col)).getOrElse(""))
       }
 
-      val only_this_rows = build_this_rows(onlyT1Row, columns_different)
+      val mergedTabular = mergedRows ++ onlyThisRows ++ onlyOtherRows
 
-      def build_only_other(rows: List[Map[String, String]], columns: List[String]): List[List[String]] = {
-        rows match {
-          case Nil => Nil
-          case r :: rs =>
-            val rowMap = r
-            val newRow = columns.map(name => {
-              if (rowMap.contains(name)) {
-                rowMap.get(name).mkString
-              } else {
-                ""
-              }
-            })
-            newRow :: build_only_other(rs, columns)
-        }
-      }
-
-      val only_other_rows = build_only_other(onlyT2Row, columns_different)
-
-      val merged_tabular = merged_rows ++ only_this_rows ++ only_other_rows
-      Some(new Table(columns_different, merged_tabular))
-
+      Some(new Table(mergedColumns, mergedTabular))
+    } else {
+      None
     }
-    else None
   }
 }
 
