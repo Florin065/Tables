@@ -75,7 +75,6 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
   // 2.1
   def select(columns: Line): Option[Table] = {
     val newColumnNames = columnNames.filter(columns.contains)
-
     val newTabular = for {
       row <- tabular
       newValues = for {
@@ -111,31 +110,50 @@ class Table (columnNames: Line, tabular: List[List[String]]) {
     val mergedColumns = (getColumnNames ++ other.getColumnNames).distinct
 
     val mergedRows = getTabular.flatMap { row1 =>
-      other.getTabular.filter(row2 => row1(getColumnNames.indexOf(key)) == row2(other.getColumnNames.indexOf(key)))
+      other.getTabular
+        .filter(row2 => row1(getColumnNames.indexOf(key)) == row2(other.getColumnNames.indexOf(key)))
         .map { row2 =>
           mergedColumns.map { col =>
-            val value1 = row1.lift(      getColumnNames.indexOf(col)).getOrElse("")
-            val value2 = row2.lift(other.getColumnNames.indexOf(col)).getOrElse("")
-            Seq(value1, value2).filter(_.nonEmpty).distinct.mkString(";")
-//            if (value1.isEmpty || value1 == value2) value2
-//            else if (value2.isEmpty) value1
-//            else s"$value1;$value2"
+            val value1 = row1
+                          .lift(      getColumnNames.indexOf(col))
+                          .getOrElse("")
+            val value2 = row2
+                          .lift(other.getColumnNames.indexOf(col))
+                          .getOrElse("")
+            Seq(value1, value2)
+              .filter(_.nonEmpty)
+              .distinct
+              .mkString(";")
           }
         }
     }
 
-    val      tabularRows =       getTabular.filterNot(row1 => other.getTabular.exists(row2 => row1(      getColumnNames.indexOf(key)) == row2(other.getColumnNames.indexOf(key))))
-    val otherTabularRows = other.getTabular.filterNot(row2 =>       getTabular.exists(row1 => row2(other.getColumnNames.indexOf(key)) == row1(      getColumnNames.indexOf(key))))
+    val      tabularRows = getTabular
+                          .filterNot(row1 => other.getTabular
+                            .exists(row2 =>
+                              row1(getColumnNames.indexOf(key))
+                                ==
+                                row2(other.getColumnNames.indexOf(key))))
+    val otherTabularRows = other.getTabular
+                          .filterNot(row2 => getTabular
+                            .exists(row1 =>
+                              row2(other.getColumnNames.indexOf(key))
+                                ==
+                                row1(getColumnNames.indexOf(key))))
 
-    val mergedTable = new Table(mergedColumns, mergedRows
-                                               ++
-                                               tabularRows.map(
-                                                 row1 => mergedColumns.map(
-                                                   col => row1.lift(      getColumnNames.indexOf(col)).getOrElse("")))
-                                               ++
-                                               otherTabularRows.map(
-                                                 row2 => mergedColumns.map(
-                                                   col => row2.lift(other.getColumnNames.indexOf(col)).getOrElse(""))))
+    val      difTabularRows =      tabularRows.map(
+      row1 => mergedColumns.map(
+        col => row1
+          .lift(getColumnNames.indexOf(col))
+          .getOrElse("")))
+
+    val difOtherTabularRows = otherTabularRows.map(
+      row2 => mergedColumns.map(
+        col => row2
+          .lift(other.getColumnNames.indexOf(col))
+          .getOrElse("")))
+
+    val mergedTable = new Table(mergedColumns, mergedRows ++ difTabularRows ++ difOtherTabularRows)
     Option(mergedTable)
   }
 }
